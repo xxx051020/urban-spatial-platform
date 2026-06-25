@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>城市空间分析平台</title>
+<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css' />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; }
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: white; padding: 12px 24px; display:flex; align-items:center; gap:16px; z-index:1000;
+  }
+  header h1 { font-size:1.3rem; font-weight:600; letter-spacing:0.5px; }
+  header .subtitle { font-size:0.8rem; opacity:0.7; }
+  .api-link { margin-left:auto; color:#64ffda; text-decoration:none; font-size:0.85rem; padding:6px 14px; border:1px solid #64ffda; border-radius:4px; transition:.2s; }
+  .api-link:hover { background:#64ffda; color:#1a1a2e; }
+  main { flex:1; display:flex; overflow:hidden; }
+  #map { flex:1; min-width:0; }
+  aside {
+    width:380px; background:#f8f9fa; border-left:1px solid #dee2e6;
+    display:flex; flex-direction:column; overflow-y:auto; z-index:999;
+  }
+  .panel { padding:16px; border-bottom:1px solid #dee2e6; }
+  .panel h3 { font-size:0.95rem; margin-bottom:10px; color:#1a1a2e; display:flex; align-items:center; gap:6px; }
+  .panel h3 .icon { font-size:1.1rem; }
+  label { display:block; font-size:0.8rem; color:#495057; margin-bottom:4px; font-weight:500; }
+  input, select, button { font-size:0.85rem; font-family:inherit; }
+  input[type='text'], input[type='number'], select {
+    width:100%; padding:8px 10px; border:1px solid #ced4da; border-radius:6px; margin-bottom:8px; outline:none; transition:.2s;
+  }
+  input:focus, select:focus { border-color:#0f3460; box-shadow:0 0 0 3px rgba(15,52,96,0.1); }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button {
+    padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:500; transition:.2s;
+  }
+  .btn-primary { background:#0f3460; color:white; width:100%; }
+  .btn-primary:hover { background:#16213e; }
+  .btn-success { background:#198754; color:white; }
+  .btn-success:hover { background:#157347; }
+  .btn-danger { background:#dc3545; color:white; }
+  .btn-danger:hover { background:#bb2d3b; }
+  .btn-outline { background:white; border:1px solid #ced4da; color:#495057; }
+  .btn-outline:hover { background:#e9ecef; }
+  .btn-sm { padding:4px 10px; font-size:0.78rem; }
+  .result-item {
+    background:white; padding:10px 12px; margin-bottom:6px; border-radius:6px;
+    border-left:4px solid #0f3460; font-size:0.82rem; cursor:pointer; transition:.15s;
+  }
+  .result-item:hover { box-shadow:0 2px 8px rgba(0,0,0,0.1); transform:translateX(2px); }
+  .result-item .name { font-weight:600; color:#1a1a2e; }
+  .result-item .meta { color:#6c757d; font-size:0.75rem; margin-top:2px; }
+  .result-item .dist { float:right; color:#0f3460; font-weight:600; font-size:0.8rem; background:#e7f1ff; padding:2px 8px; border-radius:10px; }
+  .list-container { max-height:300px; overflow-y:auto; }
+  .coords-display { background:#e9ecef; padding:6px 10px; border-radius:4px; font-size:0.78rem; margin-bottom:8px; word-break:break-all; }
+  .coords-display code { font-family:'Cascadia Code', 'Fira Code', monospace; font-size:0.75rem; }
+  .tag {
+    display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.7rem;
+    font-weight:500; margin-right:4px;
+  }
+  .tag-transport { background:#cfe2ff; color:#084298; }
+  .tag-commercial { background:#f8d7da; color:#842029; }
+  .tag-food { background:#fff3cd; color:#664d03; }
+  .tag-edu { background:#d1e7dd; color:#0a3622; }
+  .tag-medical { background:#e2d9f3; color:#432874; }
+  .tag-scenic { background:#cff4fc; color:#055160; }
+  .loading { display:inline-block; width:14px; height:14px; border:2px solid #dee2e6; border-top-color:#0f3460; border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to {transform:rotate(360deg);} }
+  .toast { position:fixed; top:20px; right:20px; padding:12px 20px; border-radius:8px; color:white; font-size:0.85rem; z-index:9999; animation:slideIn .3s; }
+  .toast-success { background:#198754; }
+  .toast-error { background:#dc3545; }
+  @keyframes slideIn { from{transform:translateX(100%); opacity:0;} to{transform:translateX(0); opacity:1;} }
+  .od-point { display:flex; align-items:center; gap:6px; background:white; padding:6px 10px; border-radius:4px; margin-bottom:4px; font-size:0.78rem; }
+  .od-point .dot { width:10px; height:10px; border-radius:50%; }
+  .od-point .dot.origin { background:#198754; }
+  .od-point .dot.dest { background:#dc3545; }
+  .matrix-cell { padding:6px 10px; font-size:0.78rem; border:1px solid #dee2e6; text-align:center; }
+  .matrix-table { border-collapse:collapse; margin-top:8px; width:100%; font-size:0.78rem; }
+  .matrix-table th { background:#0f3460; color:white; padding:6px 8px; font-weight:500; font-size:0.72rem; }
+  .matrix-table td { padding:6px 8px; text-align:center; border:1px solid #dee2e6; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏙️ 城市空间分析平台</h1>
+  <span class='subtitle'>POI 附近查询 · OD 矩阵计算</span>
+  <a href='/docs' target='_blank' class='api-link'>📘 API 文档</a>
+</header>
+<main>
+  <div id='map'></div>
+  <aside>
+    <div class='panel'>
+      <h3><span class='icon'>📍</span> POI 附近查询</h3>
+      <div class='row'>
+        <div><label>纬度 Lat</label><input type='number' id='poi-lat' value='31.2324' step='any'></div>
+        <div><label>经度 Lng</label><input type='number' id='poi-lng' value='121.4753' step='any'></div>
+      </div>
+      <div class='row'>
+        <div><label>半径 (米)</label><input type='number' id='poi-radius' value='3000' min='0' step='100'></div>
+        <div><label>类别筛选</label><select id='poi-category'><option value=''>全部类别</option></select></div>
+      </div>
+      <div class='row'>
+        <div><label>数量上限</label><input type='number' id='poi-limit' value='50' min='1' max='500'></div>
+      </div>
+      <button class='btn-primary' id='poi-search-btn'>🔍 搜索附近 POI</button>
+      <div class='coords-display' style='margin-top:8px;'>💡 点击地图任意位置可自动填入坐标</div>
+      <div class='list-container' id='poi-results'></div>
+    </div>
+
+    <div class='panel'>
+      <h3><span class='icon'>🧮</span> OD 矩阵计算</h3>
+      <div class='coords-display'>🟢 起点 · 🔴 终点 · 在地图上点击添加</div>
+      <button class='btn-outline btn-sm' id='od-add-origin' style='margin-right:4px;'>+ 添加起点</button>
+      <button class='btn-outline btn-sm' id='od-add-dest' style='margin-right:4px;'>+ 添加终点</button>
+      <button class='btn-danger btn-sm' id='od-clear'>清空</button>
+      <div id='od-points' style='margin:8px 0; max-height:150px; overflow-y:auto;'></div>
+      <button class='btn-success' id='od-calc-btn' style='width:100%;'>🚀 提交计算</button>
+      <div id='od-result' style='margin-top:10px;'></div>
+    </div>
+  </aside>
+</main>
+
+<div id='toast-container'></div>
+
+<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>
+<script>
+const API = '';
+
+const map = L.map('map').setView([31.2324, 121.4753], 13);
+L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+  subdomains: '1234',
+  attribution: '&copy; 高德地图',
+  maxZoom: 18
+}).addTo(map);
+
+const poiMarker = L.marker([31.2324, 121.4753], {draggable:true}).addTo(map).bindPopup('搜索中心');
+let resultLayer = L.layerGroup().addTo(map);
+let odOriginLayer = L.layerGroup().addTo(map);
+let odDestLayer = L.layerGroup().addTo(map);
+
+let odOrigins = [];
+let odDestinations = [];
+let odMode = null;
+
+map.on('click', e => {
+  const {lat, lng} = e.latlng;
+  if (odMode === 'origin') {
+    odOrigins.push([lng, lat]);
+    odMode = null;
+    updateODDisplay();
+    renderODMarkers();
+    toast('起点已添加');
+  } else if (odMode === 'dest') {
+    odDestinations.push([lng, lat]);
+    odMode = null;
+    updateODDisplay();
+    renderODMarkers();
+    toast('终点已添加');
+  } else {
+    document.getElementById('poi-lat').value = lat.toFixed(6);
+    document.getElementById('poi-lng').value = lng.toFixed(6);
+    poiMarker.setLatLng([lat, lng]);
+  }
+});
+
+poiMarker.on('dragend', () => {
+  const ll = poiMarker.getLatLng();
+  document.getElementById('poi-lat').value = ll.lat.toFixed(6);
+  document.getElementById('poi-lng').value = ll.lng.toFixed(6);
+});
+
+function renderODMarkers() {
+  odOriginLayer.clearLayers();
+  odDestLayer.clearLayers();
+  odOrigins.forEach(([lng, lat]) => {
+    L.circleMarker([lat, lng], {radius:7, color:'#198754', fillColor:'#198754', fillOpacity:0.8}).addTo(odOriginLayer).bindPopup('起点');
+  });
+  odDestinations.forEach(([lng, lat]) => {
+    L.circleMarker([lat, lng], {radius:7, color:'#dc3545', fillColor:'#dc3545', fillOpacity:0.8}).addTo(odDestLayer).bindPopup('终点');
+  });
+}
+
+function updateODDisplay() {
+  const el = document.getElementById('od-points');
+  let html = '';
+  odOrigins.forEach(([lng, lat], i) => {
+    html += '<div class="od-point"><span class="dot origin"></span>起点'+(i+1)+': ['+lng.toFixed(4)+', '+lat.toFixed(4)+'] <button class="btn-danger btn-sm" style="margin-left:auto" onclick="removeOrigin('+i+')">×</button></div>';
+  });
+  odDestinations.forEach(([lng, lat], i) => {
+    html += '<div class="od-point"><span class="dot dest"></span>终点'+(i+1)+': ['+lng.toFixed(4)+', '+lat.toFixed(4)+'] <button class="btn-danger btn-sm" style="margin-left:auto" onclick="removeDest('+i+')">×</button></div>';
+  });
+  if (html === '') html = '<div style="color:#6c757d;font-size:0.78rem;">尚未添加点位</div>';
+  el.innerHTML = html;
+}
+
+function removeOrigin(i) { odOrigins.splice(i,1); updateODDisplay(); renderODMarkers(); }
+function removeDest(i) { odDestinations.splice(i,1); updateODDisplay(); renderODMarkers(); }
+
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = 'toast toast-'+type;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+function categoryTag(cat) {
+  const map = { '交通':'transport','商业':'commercial','餐饮':'food','教育':'edu','医疗':'medical','景点':'scenic' };
+  const cn = { '交通':'交通','商业':'商业','餐饮':'餐饮','教育':'教育','医疗':'医疗','景点':'景点' };
+  return '<span class="tag tag-'+(map[cat]||'transport')+'">'+(cn[cat]||cat)+'</span>';
+}
+
+async function loadCategories() {
+  try {
+    const r = await fetch(API+'/api/poi/categories');
+    const d = await r.json();
+    const sel = document.getElementById('poi-category');
+    d.categories.forEach(c => { const o = document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o); });
+  } catch(e) { console.error(e); }
+}
+
+document.getElementById('poi-search-btn').addEventListener('click', async () => {
+  const lat = document.getElementById('poi-lat').value;
+  const lng = document.getElementById('poi-lng').value;
+  const radius = document.getElementById('poi-radius').value;
+  const category = document.getElementById('poi-category').value;
+  const limit = document.getElementById('poi-limit').value;
+  const btn = document.getElementById('poi-search-btn');
+  btn.innerHTML = '<span class="loading"></span>搜索中...';
+  btn.disabled = true;
+  try {
+    let url = API+'/api/poi/nearby?lat='+lat+'&lng='+lng+'&radius='+radius+'&limit='+limit;
+    if (category) url += '&category='+encodeURIComponent(category);
+    const r = await fetch(url);
+    const d = await r.json();
+    const el = document.getElementById('poi-results');
+    resultLayer.clearLayers();
+    if (d.count === 0) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:#6c757d;">未找到 POI</div>';
+    } else {
+      el.innerHTML = '<div style="font-size:0.8rem;color:#6c757d;margin-bottom:8px;">找到 '+d.count+' 个 POI</div>';
+      d.results.forEach(p => {
+        el.innerHTML += '<div class="result-item" onclick="map.setView(['+p.lat+','+p.lng+'],16)">'+
+          '<span class="dist">'+p.distance_m+'m</span>'+
+          '<div class="name">'+p.name+'</div>'+
+          '<div class="meta">'+categoryTag(p.category)+' '+ (p.address||'') +'</div>'+
+          '</div>';
+        const marker = L.marker([p.lat, p.lng]).bindPopup('<b>'+p.name+'</b><br>'+p.category+' · '+p.distance_m+'m');
+        resultLayer.addLayer(marker);
+      });
+    }
+  } catch(e) { toast('查询失败: '+e.message, 'error'); }
+  btn.innerHTML = '🔍 搜索附近 POI';
+  btn.disabled = false;
+});
+
+document.getElementById('od-add-origin').addEventListener('click', () => { odMode='origin'; toast('请在地图上点击选择起点', 'success'); });
+document.getElementById('od-add-dest').addEventListener('click', () => { odMode='dest'; toast('请在地图上点击选择终点', 'success'); });
+document.getElementById('od-clear').addEventListener('click', () => {
+  odOrigins=[]; odDestinations=[]; odMode=null; updateODDisplay(); renderODMarkers();
+  document.getElementById('od-result').innerHTML = '';
+});
+
+document.getElementById('od-calc-btn').addEventListener('click', async () => {
+  if (odOrigins.length===0 || odDestinations.length===0) { toast('请至少添加1个起点和1个终点', 'error'); return; }
+  const btn = document.getElementById('od-calc-btn');
+  btn.innerHTML = '<span class="loading"></span>提交中...';
+  btn.disabled = true;
+  try {
+    const r = await fetch(API+'/api/od-matrix/', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({origins:odOrigins, destinations:odDestinations})
+    });
+    const d = await r.json();
+    document.getElementById('od-result').innerHTML = 
+      '<div style="background:#d1e7dd;padding:10px;border-radius:6px;margin-top:8px;">✅ 任务已提交<br><code>'+d.task_id+'</code></div>';
+    pollTask(d.task_id);
+  } catch(e) { toast('提交失败: '+e.message, 'error'); }
+  btn.innerHTML = '🚀 提交计算';
+  btn.disabled = false;
+});
+
+async function pollTask(taskId) {
+  const el = document.getElementById('od-result');
+  for (let i=0; i<60; i++) {
+    await new Promise(r=>setTimeout(r,1500));
+    try {
+      const r = await fetch(API+'/api/od-matrix/'+taskId);
+      const d = await r.json();
+      if (d.status==='completed' && d.matrix) {
+        let html = '<div style="font-size:0.8rem;color:#198754;margin-bottom:6px;">✅ 计算完成</div>';
+        html += '<div style="overflow-x:auto;"><table class="matrix-table"><thead><tr><th></th>';
+        d.matrix[0].forEach((_,j) => html += '<th>终点'+(j+1)+'</th>');
+        html += '</tr></thead><tbody>';
+        d.matrix.forEach((row,i) => {
+          html += '<tr><td style="background:#e7f1ff;font-weight:600;">起点'+(i+1)+'</td>';
+          row.forEach(v => html += '<td class="matrix-cell">'+(v<1000 ? v.toFixed(0)+'m' : (v/1000).toFixed(1)+'km')+'</td>');
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        el.innerHTML = html;
+        drawODLines(d.matrix);
+        return;
+      }
+      if (d.status==='failed') { el.innerHTML = '<div style="color:#dc3545;">❌ 计算失败</div>'; return; }
+      if (i===0) el.innerHTML = '<div style="padding:10px;">⏳ 计算中<span class="loading"></span></div>';
+    } catch(e) { el.innerHTML = '<div style="color:#dc3545;">查询失败</div>'; return; }
+  }
+  el.innerHTML = '<div style="color:#856404;">⏰ 超时，请刷新后重试</div>';
+}
+
+function drawODLines(matrix) {
+  odOrigins.forEach((o, i) => {
+    odDestinations.forEach((d, j) => {
+      const dist = matrix[i][j];
+      const color = dist < 2000 ? '#198754' : dist < 5000 ? '#fd7e14' : '#dc3545';
+      L.polyline([[o[1],o[0]], [d[1],d[0]]], {color, weight:2, opacity:0.6, dashArray:'6,8'})
+        .addTo(map)
+        .bindPopup('距离: '+(dist<1000?dist.toFixed(0)+'m':(dist/1000).toFixed(1)+'km'));
+    });
+  });
+}
+
+loadCategories();
+</script>
+</body>
+</html>
