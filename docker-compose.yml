@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+
+  postgis:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: urban_spatial
+      POSTGRES_USER: spatial_user
+      POSTGRES_PASSWORD: spatial_pass
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/init_db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U spatial_user -d urban_spatial']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  celery_worker:
+    build: ./backend
+    command: celery -A app.tasks.od_tasks worker --loglevel=info --concurrency=2
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://spatial_user:spatial_pass@postgis:5432/urban_spatial
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  fastapi:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    ports:
+      - '8000:8000'
+    environment:
+      DATABASE_URL: postgresql+asyncpg://spatial_user:spatial_pass@postgis:5432/urban_spatial
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  pgdata:
